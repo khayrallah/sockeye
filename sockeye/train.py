@@ -199,7 +199,8 @@ def create_checkpoint_decoder(args: argparse.Namespace,
                                                 inputs=[args.validation_source] + args.validation_source_factors,
                                                 references=args.validation_target,
                                                 model=args.output,
-                                                sample_size=sample_size)
+                                                sample_size=sample_size,
+                                                external_validation_script=args.external_validation_script)
 
 
 def use_shared_vocab(args: argparse.Namespace) -> bool:
