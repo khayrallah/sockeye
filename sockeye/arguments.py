@@ -1063,6 +1063,12 @@ def add_training_args(params):
                                    'Use a negative number to automatically acquire a GPU. '
                                    'Use a positive number to acquire a specific GPU. Default: %(default)s.')
 
+    train_params.add_argument('--external-validation-script',
+                              default=None,
+                              type=str,
+                              help='Separate script for decoding validation data. '
+                                   'must take 3 positional arguments: model, checkpoint, outputfile name')
+
     train_params.add_argument('--seed',
                               type=int,
                               default=13,

@@ -18,6 +18,7 @@ import logging
 import os
 import random
 import time
+import subprocess
 from contextlib import ExitStack
 from typing import Any, Dict, Optional, List
 
@@ -72,7 +73,8 @@ class CheckpointDecoder:
                  max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
                  ensemble_mode: str = 'linear',
                  sample_size: int = -1,
-                 random_seed: int = 42) -> None:
+                 random_seed: int = 42,
+                 external_validation_script: str = None) -> None:
         self.context = context
         self.max_input_len = max_input_len
         self.max_output_length_num_stds = max_output_length_num_stds
@@ -85,6 +87,7 @@ class CheckpointDecoder:
         self.length_penalty_beta = length_penalty_beta
         self.softmax_temperature = softmax_temperature
         self.model = model
+        self.external_validation_script = external_validation_script
 
         with ExitStack() as exit_stack:
             inputs_fins = [exit_stack.enter_context(data_io.smart_open(f)) for f in inputs]
@@ -127,41 +130,75 @@ class CheckpointDecoder:
         :param output_name: Filename to write translations to. Defaults to /dev/null.
         :return: Mapping of metric names to scores.
         """
-        models, source_vocabs, target_vocab = inference.load_models(
-            self.context,
-            self.max_input_len,
-            self.beam_size,
-            self.batch_size,
-            [self.model],
-            [checkpoint],
-            softmax_temperature=self.softmax_temperature,
-            max_output_length_num_stds=self.max_output_length_num_stds)
-        translator = inference.Translator(context=self.context,
-                                          ensemble_mode=self.ensemble_mode,
-                                          bucket_source_width=self.bucket_width_source,
-                                          length_penalty=inference.LengthPenalty(self.length_penalty_alpha, self.length_penalty_beta),
-                                          beam_prune=0.0,
-                                          beam_search_stop='all',
-                                          nbest_size=self.nbest_size,
-                                          models=models,
-                                          source_vocabs=source_vocabs,
-                                          target_vocab=target_vocab,
-                                          restrict_lexicon=None,
-                                          store_beam=False)
-        trans_wall_time = 0.0
-        translations = []
-        with data_io.smart_open(output_name, 'w') as output:
-            handler = sockeye.output_handler.StringOutputHandler(output)
+
+        if  self.external_validation_script:
+            trans_wall_time = 0.0 ##this also counts time waiting in queue
+
+            #touch the file so we can wc it without error
+            subprocess.call("touch "+ output_name, shell=True)
+
+
+            command = external_validation_script + " " + self.model + " "  + checkpoint+ " " + output_name
+
+
+            subprocess.call(command, shell=True)
             tic = time.time()
-            trans_inputs = []  # type: List[inference.TranslatorInput]
-            for i, inputs in enumerate(self.inputs_sentences):
-                trans_inputs.append(sockeye.inference.make_input_from_multiple_strings(i, inputs))
-            trans_outputs = translator.translate(trans_inputs)
+
+            # check if the file has sample_size number of lines
+            #don't wait for more than a day, that would be really bad.
+            while int(subprocess.check_output("wc -l < " + output_name)) < sample_size  and time.time() - tic < 24 * 60 * 60:
+                time.sleep(30)
+
+            if  int(subprocess.check_output("wc -l < " + output_name)) < sample_size : #something went wrong and flag was not written
+                raise Exception("Had to wait %d hours for the Checkpoint %s to finish, and it is not done yet. "
+                               "Something is probably very wrong." % (wait_time/(60.0*60.0), name, C.TRAIN_ARGS_CHECKPOINT_FREQUENCY))
+
+
             trans_wall_time = time.time() - tic
-            for trans_input, trans_output in zip(trans_inputs, trans_outputs):
-                handler.handle(trans_input, trans_output)
-                translations.append(trans_output.translation)
+
+        # read file so sockeye can calculate BLEU
+        translations = []
+        with data_io.smart_open(output_name, 'rt') as output_file:
+            translations=output_file.read().splitlines()
+
         avg_time = trans_wall_time / len(self.target_sentences)
+
+        else:
+            models, source_vocabs, target_vocab = inference.load_models(
+                self.context,
+                self.max_input_len,
+                self.beam_size,
+                self.batch_size,
+                [self.model],
+                [checkpoint],
+                softmax_temperature=self.softmax_temperature,
+                max_output_length_num_stds=self.max_output_length_num_stds)
+            translator = inference.Translator(context=self.context,
+                                              ensemble_mode=self.ensemble_mode,
+                                              bucket_source_width=self.bucket_width_source,
+                                              length_penalty=inference.LengthPenalty(self.length_penalty_alpha, self.length_penalty_beta),
+                                              beam_prune=0.0,
+                                              beam_search_stop='all',
+                                              nbest_size=self.nbest_size,
+                                              models=models,
+                                              source_vocabs=source_vocabs,
+                                              target_vocab=target_vocab,
+                                              restrict_lexicon=None,
+                                              store_beam=False)
+            trans_wall_time = 0.0
+            translations = []
+            with data_io.smart_open(output_name, 'w') as output:
+                handler = sockeye.output_handler.StringOutputHandler(output)
+                tic = time.time()
+                trans_inputs = []  # type: List[inference.TranslatorInput]
+                for i, inputs in enumerate(self.inputs_sentences):
+                    trans_inputs.append(sockeye.inference.make_input_from_multiple_strings(i, inputs))
+                trans_outputs = translator.translate(trans_inputs)
+                trans_wall_time = time.time() - tic
+                for trans_input, trans_output in zip(trans_inputs, trans_outputs):
+                    handler.handle(trans_input, trans_output)
+                    translations.append(trans_output.translation)
+            avg_time = trans_wall_time / len(self.target_sentences)
 
         # TODO(fhieber): eventually add more metrics (METEOR etc.)
         return {C.BLEU_VAL: evaluate.raw_corpus_bleu(hypotheses=translations,
