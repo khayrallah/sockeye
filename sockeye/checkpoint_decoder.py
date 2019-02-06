@@ -156,12 +156,11 @@ class CheckpointDecoder:
 
             trans_wall_time = time.time() - tic
 
-        # read file so sockeye can calculate BLEU
-        translations = []
-        with data_io.smart_open(output_name, 'rt') as output_file:
-            translations=output_file.read().splitlines()
+            # read file so sockeye can calculate BLEU
+            translations = []
+            with data_io.smart_open(output_name, 'rt') as output_file:
+                translations=output_file.read().splitlines()
 
-        avg_time = trans_wall_time / len(self.target_sentences)
 
         else:
             models, source_vocabs, target_vocab = inference.load_models(
@@ -198,7 +197,7 @@ class CheckpointDecoder:
                 for trans_input, trans_output in zip(trans_inputs, trans_outputs):
                     handler.handle(trans_input, trans_output)
                     translations.append(trans_output.translation)
-            avg_time = trans_wall_time / len(self.target_sentences)
+        avg_time = trans_wall_time / len(self.target_sentences)
 
         # TODO(fhieber): eventually add more metrics (METEOR etc.)
         return {C.BLEU_VAL: evaluate.raw_corpus_bleu(hypotheses=translations,
