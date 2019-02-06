@@ -138,7 +138,7 @@ class CheckpointDecoder:
             subprocess.call("touch "+ output_name, shell=True)
 
 
-            command = external_validation_script + " " + self.model + " "  + checkpoint+ " " + output_name
+            command = self.external_validation_script + " " + self.model + " "  + checkpoint+ " " + output_name
 
 
             subprocess.call(command, shell=True)
