@@ -146,10 +146,10 @@ class CheckpointDecoder:
 
             # check if the file has sample_size number of lines
             #don't wait for more than a day, that would be really bad.
-            while int(subprocess.check_output("wc -l < " + output_name)) < sample_size  and time.time() - tic < 24 * 60 * 60:
+            while int(subprocess.check_output("wc -l < " + output_name, shell=True)) < sample_size  and time.time() - tic < 24 * 60 * 60:
                 time.sleep(30)
 
-            if  int(subprocess.check_output("wc -l < " + output_name)) < sample_size : #something went wrong and flag was not written
+            if  int(subprocess.check_output("wc -l < " + output_name, shell=True)) < sample_size : #something went wrong and flag was not written
                 raise Exception("Had to wait %d hours for the Checkpoint %s to finish, and it is not done yet. "
                                "Something is probably very wrong." % (wait_time/(60.0*60.0), name, C.TRAIN_ARGS_CHECKPOINT_FREQUENCY))
 
