@@ -88,6 +88,7 @@ class CheckpointDecoder:
         self.softmax_temperature = softmax_temperature
         self.model = model
         self.external_validation_script = external_validation_script
+        self.sample_size = sample_size
 
         with ExitStack() as exit_stack:
             inputs_fins = [exit_stack.enter_context(data_io.smart_open(f)) for f in inputs]
@@ -146,10 +147,10 @@ class CheckpointDecoder:
 
             # check if the file has sample_size number of lines
             #don't wait for more than a day, that would be really bad.
-            while int(subprocess.check_output("wc -l < " + output_name, shell=True)) < sample_size  and time.time() - tic < 24 * 60 * 60:
+            while int(subprocess.check_output("wc -l < " + output_name, shell=True)) < self.sample_size  and time.time() - tic < 24 * 60 * 60:
                 time.sleep(30)
 
-            if  int(subprocess.check_output("wc -l < " + output_name, shell=True)) < sample_size : #something went wrong and flag was not written
+            if  int(subprocess.check_output("wc -l < " + output_name, shell=True)) < self.sample_size : #something went wrong and flag was not written
                 raise Exception("Had to wait %d hours for the Checkpoint %s to finish, and it is not done yet. "
                                "Something is probably very wrong." % (wait_time/(60.0*60.0), name, C.TRAIN_ARGS_CHECKPOINT_FREQUENCY))
 
